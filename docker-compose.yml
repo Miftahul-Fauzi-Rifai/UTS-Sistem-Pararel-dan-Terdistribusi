@@ -1,0 +1,31 @@
+services:
+  aggregator:
+    build: .
+    container_name: uts-aggregator
+    ports:
+      - "8080:8080"
+    volumes:
+      - aggregator_data:/app/data
+
+  publisher:
+    build: .
+    container_name: uts-publisher
+    depends_on:
+      - aggregator
+    command:
+      [
+        "python",
+        "-m",
+        "src.publisher_sim",
+        "--url",
+        "http://aggregator:8080/publish",
+        "--count",
+        "5000",
+        "--duplicate-rate",
+        "0.2"
+      ]
+    profiles:
+      - demo
+
+volumes:
+  aggregator_data:

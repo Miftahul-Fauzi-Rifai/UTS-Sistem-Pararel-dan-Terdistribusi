@@ -6,10 +6,39 @@ Pub-Sub Log Aggregator dengan Idempotent Consumer dan Deduplication.
 
 ## 1. Ringkasan Sistem
 
-Sistem ini adalah layanan log aggregator lokal berbasis pola publish-subscribe menggunakan FastAPI, asyncio.Queue, dan SQLite. Publisher mengirim event ke endpoint POST /publish dalam bentuk single event atau batch. Event divalidasi, dimasukkan ke antrean internal, lalu diproses oleh consumer di background. Saat consumer menerima event, sistem melakukan pengecekan dedup berbasis pasangan (topic, event_id). Jika pasangan tersebut belum pernah diproses, event disimpan ke SQLite sebagai event unik. Jika sudah ada, event ditandai sebagai duplikasi dan tidak diproses ulang. Pendekatan ini membuat consumer bersifat idempotent.
+Sistem ini merupakan layanan log aggregator lokal berbasis pola publish-subscribe menggunakan FastAPI, asyncio.Queue, dan SQLite. Publisher mengirim event ke endpoint POST /publish dalam bentuk single event atau batch. Event divalidasi, dimasukkan ke antrean internal, lalu diproses oleh consumer secara asynchronous.
 
-Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik yang sudah diproses, serta endpoint GET /stats untuk observability minimum seperti received, unique_processed, duplicate_dropped, topics, queue_size, dan uptime. Seluruh komponen berjalan lokal dalam container Docker, tanpa ketergantungan layanan eksternal. Persistensi dedup dijaga melalui file SQLite pada direktori data container sehingga saat service restart, event lama tetap dikenali sebagai duplikasi. Desain ini menargetkan model at-least-once delivery dengan state akhir yang konsisten melalui deduplication.
+Consumer melakukan deduplication berdasarkan pasangan kunci (topic, event_id). Jika pasangan tersebut belum pernah diproses, event disimpan ke SQLite sebagai event unik. Jika sudah ada, event ditandai sebagai duplikasi dan tidak diproses ulang. Pendekatan ini membuat consumer bersifat idempotent.
 
+Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik, serta GET /stats untuk observability minimum: received, unique_processed, duplicate_dropped, topics, queue_size, dan uptime. Seluruh komponen berjalan lokal dalam container Docker tanpa layanan eksternal. Persistensi dedup dijaga melalui file SQLite pada volume container sehingga tetap efektif setelah restart. Desain ini menargetkan model at-least-once delivery dengan state akhir yang konsisten melalui deduplication.
+
+## 2. Arsitektur Sistem
+
+```text
+Publisher -> POST /publish -> FastAPI Ingress -> asyncio.Queue -> Idempotent Consumer
+															  |
+															  +-> SQLite Dedup Store
+																  (UNIQUE(topic, event_id))
+															  |
+															  +-> GET /events
+															  +-> GET /stats
+```
+
+Penjelasan singkat:
+
+1. Ingestion dan processing dipisahkan melalui queue agar sistem tetap responsif saat burst.
+2. Consumer idempotent menolak reprocessing event duplikat.
+3. SQLite berperan sebagai dedup store durable sekaligus event storage lokal.
+
+## 3. Keputusan Desain Implementasi
+
+1. Framework API: FastAPI, karena validasi schema dan performa I/O baik untuk event ingestion.
+2. Pipeline internal: asyncio.Queue untuk pola publish-subscribe in-process yang sederhana.
+3. Idempotency dan dedup: SQLite dengan UNIQUE(topic, event_id).
+4. Persistensi restart: dedup store disimpan di volume Docker (`/app/data/dedup.db`).
+5. Stats persistence: counter received, unique_processed, duplicate_dropped juga disimpan di SQLite.
+6. Ordering: tidak menjamin total ordering global; memakai event timestamp dan processing order lokal.
+7. Observability: endpoint stats dan log warning saat duplicate event terdeteksi.
 
 ## 4. Jawaban Teori T1-T8
 
@@ -47,7 +76,7 @@ Pendekatan praktis yang dipakai adalah kombinasi timestamp event dari publisher 
 
 Failure mode utama pada aggregator adalah duplicate delivery, out-of-order arrival, dan crash process. Duplicate delivery muncul dari retry publisher saat timeout atau saat status ack tidak pasti. Out-of-order muncul karena variasi delay jaringan dan concurrency pengirim. Crash dapat terjadi ketika service berhenti tiba-tiba di tengah pemrosesan, yang berisiko menimbulkan ketidaksesuaian antara event yang sudah diterima dan state yang tersimpan.
 
-Strategi mitigasi yang digunakan adalah: pertama, penerapan idempotent consumer dengan dedup key (topic, event_id) untuk menahan efek duplikasi. Kedua, penyimpanan dedup pada SQLite file-based agar tahan restart. Ketiga, logging warning untuk setiap duplikasi agar kualitas delivery channel mudah dipantau. Keempat, penggunaan antrean asynchronous untuk memisahkan fase penerimaan event dan fase pemrosesan, sehingga burst traffic tidak langsung membebani penyimpanan. Untuk kegagalan sementara di sisi pengirim, retry dengan backoff tetap direkomendasikan. Sistem ini tidak memaksakan reorder global terhadap out-of-order karena fokus utamanya ingestion reliability, bukan strict sequencing. Dengan strategi tersebut, sistem dirancang gagal secara aman, lalu pulih tanpa menghasilkan double-processing state. Prinsip ini sejalan dengan fault tolerance pada sistem terdistribusi (Tanenbaum & Van Steen, 2007, Bab 6).
+Strategi mitigasi yang digunakan adalah: pertama, penerapan idempotent consumer dengan dedup key (topic, event_id) untuk menahan efek duplikasi. Kedua, penyimpanan dedup pada SQLite file-based agar tahan restart. Ketiga, logging warning untuk setiap duplikasi agar kualitas delivery channel mudah dipantau. Keempat, penggunaan antrean asynchronous untuk memisahkan fase penerimaan event dan fase pemrosesan, sehingga burst traffic tidak langsung membebani penyimpanan. Untuk kegagalan sementara di sisi pengirim, retry dengan backoff tetap direkomendasikan sebagai praktik operasional. Sistem ini tidak memaksakan reorder global terhadap out-of-order karena fokus utamanya ingestion reliability, bukan strict sequencing. Dengan strategi tersebut, sistem dirancang gagal secara aman, lalu pulih tanpa menghasilkan double-processing state. Prinsip ini sejalan dengan fault tolerance pada sistem terdistribusi (Tanenbaum & Van Steen, 2007, Bab 6).
 
 ### T7 (Bab 7): Eventual consistency dalam konteks aggregator
 
@@ -61,16 +90,7 @@ Evaluasi sistem menggunakan metrik throughput, publish latency, duplicate rate, 
 
 Metrik tersebut terkait langsung dengan keputusan desain. Antrean asynchronous meningkatkan isolasi antara penerimaan dan pemrosesan sehingga throughput lebih stabil saat burst. Dedup store SQLite memperkuat correctness dan restart safety, walau menambah overhead I/O dibanding in-memory set. Keputusan untuk tidak memaksakan total ordering global menurunkan kompleksitas dan latency. Endpoint stats berfungsi sebagai observability minimum untuk memantau received, unique_processed, duplicate_dropped, dan distribusi topic. Dengan demikian, kualitas sistem tidak hanya dinilai dari kecepatan, tetapi dari keseimbangan antara kinerja, ketahanan kegagalan, dan konsistensi state akhir. Kerangka evaluasi ini mengintegrasikan trade-off lintas Bab 1 sampai Bab 7 secara operasional (Tanenbaum & Van Steen, 2007, Bab 1-7).
 
-## 5. Keputusan Desain Implementasi
-
-1. Framework API: FastAPI, karena validasi schema dan performa I/O baik untuk event ingestion.
-2. Pipeline internal: asyncio.Queue, untuk pola publish-subscribe in-process yang sederhana.
-3. Idempotency dan dedup: SQLite dengan UNIQUE(topic, event_id).
-4. Persistensi restart: file dedup database pada direktori data container.
-5. Ordering: tidak menjamin total ordering global; memakai event timestamp dan processing order lokal.
-6. Observability: endpoint stats dan log warning saat duplicate event terdeteksi.
-
-## 6. Analisis Performa dan Metrik
+## 5. Analisis Performa dan Metrik
 
 Pengujian skala minimum menggunakan 5000 event dengan minimal 20 persen duplikasi. Target correctness yang diperiksa adalah:
 
@@ -80,18 +100,18 @@ Pengujian skala minimum menggunakan 5000 event dengan minimal 20 persen duplikas
 
 Selain correctness, pengukuran waktu eksekusi publish batch dipakai sebagai indikator responsivitas. Dalam test, batas waktu diset dalam rentang wajar untuk lingkungan lokal. Hasil pengujian menunjukkan pipeline tetap responsif, dedup tetap konsisten, dan statistik sistem sesuai dengan distribusi data uji.
 
-## 7. Validasi Deliverables
+## 6. Validasi Deliverables
 
 1. Kode aplikasi: folder src tersedia.
-2. Unit tests: folder tests tersedia dengan 8 test.
+2. Unit tests: folder tests tersedia dengan 9 test.
 3. Dependency file: requirements.txt tersedia.
 4. Dockerfile: tersedia dan menjalankan service pada port 8080.
 5. Docker Compose bonus: tersedia dengan service aggregator dan publisher.
 6. Dokumentasi run: tersedia di README.md.
 7. Laporan: file ini (report.md).
-8. Video demo YouTube publik: harus ditambahkan manual sebelum submit final.
+8. Video demo YouTube publik: perlu ditambahkan sebelum submit final.
 
-## 8. Rencana Isi Video Demo (5-8 Menit)
+## 7. Rencana Isi Video Demo (5-8 Menit)
 
 1. Build image dan jalankan container.
 2. Kirim event normal lalu lihat hasil GET /events dan GET /stats.
@@ -100,14 +120,12 @@ Selain correctness, pengukuran waktu eksekusi publish batch dipakai sebagai indi
 5. Kirim ulang event lama dan tunjukkan dedup tetap menolak reprocessing.
 6. Ringkas arsitektur dan alasan desain (30-60 detik).
 
-## 9. Contoh Alur Eksekusi Demo (Gaya Terminal)
-
-Bagian ini disusun mengikuti format demonstrasi teknis yang umum dipakai saat presentasi UTS.
+## 8. Contoh Alur Eksekusi Demo (Gaya Terminal)
 
 Catatan Windows PowerShell:
 
-1. Gunakan `curl.exe` (bukan `curl`) agar tidak memicu alias `Invoke-WebRequest` yang menampilkan output panjang.
-2. Tambahkan opsi `-s` agar output fokus ke body JSON dan mudah dibandingkan dengan contoh hasil.
+1. Gunakan curl.exe (bukan curl) agar tidak memicu alias Invoke-WebRequest.
+2. Tambahkan opsi -s agar output fokus ke body JSON.
 
 1. Build image:
 
@@ -118,7 +136,8 @@ docker build -t uts-aggregator .
 2. Jalankan container dengan volume data persisten:
 
 ```bash
-docker run --name uts-agg -d -p 8080:8080 -v ${PWD}/data:/app/data uts-aggregator
+docker rm -f uts-agg
+docker run --name uts-agg -d -p 8080:8080 -v uts_aggregator_data:/app/data uts-aggregator
 ```
 
 3. Verifikasi health endpoint:
@@ -142,13 +161,10 @@ curl.exe -s http://localhost:8080/stats
 Contoh hasil awal:
 
 ```text
-received=0
-unique_processed=0
-duplicate_dropped=0
-topics={}
+{"received":0,"unique_processed":0,"duplicate_dropped":0,"topics":{},"topic_count":0,"queue_size":0}
 ```
 
-5. Kirim 5000 event dengan 20% duplikasi menggunakan publisher simulator:
+5. Kirim 5000 event dengan 20% duplikasi:
 
 ```bash
 python -m src.publisher_sim --url http://localhost:8080/publish --count 5000 --duplicate-rate 0.2
@@ -163,20 +179,26 @@ curl.exe -s http://localhost:8080/stats
 Contoh hasil utama yang diharapkan:
 
 ```text
-received=5000
-unique_processed=4000
-duplicate_dropped=1000
+{"received":5000,"unique_processed":4000,"duplicate_dropped":1000,...}
 ```
 
-7. Restart container (simulasi crash/restart), lalu kirim lagi event dengan event_id yang sama.
+7. Restart container, lalu kirim lagi event dengan event_id yang sama.
+8. Tunjukkan duplicate tetap tidak diproses ulang (duplicate_dropped bertambah, event unik tidak bertambah untuk ID yang sama).
 
-8. Tunjukkan bahwa duplicate tetap tidak diproses ulang (duplicate_dropped bertambah, event unik tidak bertambah untuk ID yang sama).
+## 9. Keterkaitan dengan Materi Bab 1-7
 
-Catatan presentasi:
+1. Bab 1: karakteristik sistem terdistribusi dan trade-off konsistensi-ketersediaan.
+2. Bab 2: pemilihan arsitektur publish-subscribe.
+3. Bab 3: delivery semantics at-least-once dan kebutuhan idempotency.
+4. Bab 4: naming topic dan event identity.
+5. Bab 5: waktu, ordering, dan batasan total ordering.
+6. Bab 6: failure modes serta fault tolerance berbasis dedup durable.
+7. Bab 7: eventual consistency melalui idempotency + deduplication.
 
-1. Jika muncul warning deprecasi dari framework, jelaskan bahwa warning tidak mengubah correctness dedup/idempotency.
-2. Fokus penilaian demo adalah bukti idempotency, deduplication, dan persistensi store setelah restart.
+## 10. Kesimpulan
 
-## 10. Daftar Pustaka (APA Edisi Ke-7)
+Sistem berhasil mengimplementasikan prinsip utama sistem terdistribusi untuk skenario log aggregation lokal. Kombinasi at-least-once delivery, idempotent consumer, dan deduplication menjaga konsistensi state akhir meskipun terdapat duplicate delivery dan restart service. Dengan arsitektur queue-based dan dedup store durable, sistem tetap responsif, reproducible, dan sesuai kriteria UTS.
+
+## 11. Daftar Pustaka (APA Edisi Ke-7)
 
 Tanenbaum, A. S., & Van Steen, M. (2007). Distributed systems: Principles and paradigms (2nd ed.). Pearson Prentice Hall.

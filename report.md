@@ -14,21 +14,22 @@ Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik, se
 
 ## 2. Arsitektur Sistem
 
-```text
-Publisher -> POST /publish -> FastAPI Ingress -> asyncio.Queue -> Idempotent Consumer
-															  |
-															  +-> SQLite Dedup Store
-																  (UNIQUE(topic, event_id))
-															  |
-															  +-> GET /events
-															  +-> GET /stats
+```mermaid
+flowchart LR
+	P[Publisher] --> API[POST /publish\nFastAPI Ingress + Validasi]
+	API --> Q[asyncio.Queue\nInternal Buffer]
+	Q --> C[Idempotent Consumer]
+	C --> D[(SQLite Dedup Store\nUNIQUE(topic, event_id))]
+	D --> E[GET /events]
+	D --> S[GET /stats]
 ```
 
 Penjelasan singkat:
 
-1. Ingestion dan processing dipisahkan melalui queue agar sistem tetap responsif saat burst.
-2. Consumer idempotent menolak reprocessing event duplikat.
-3. SQLite berperan sebagai dedup store durable sekaligus event storage lokal.
+1. Jalur tulis (publish) dan jalur baca (events/stats) dipisahkan agar alur mudah dilacak.
+2. Ingestion dan processing dipisahkan lewat queue supaya API tetap responsif saat burst.
+3. Consumer idempotent memastikan event dengan kunci (topic, event_id) tidak diproses dua kali.
+4. SQLite menyimpan dedup key dan event sehingga state tetap konsisten setelah restart.
 
 ## 3. Keputusan Desain Implementasi
 

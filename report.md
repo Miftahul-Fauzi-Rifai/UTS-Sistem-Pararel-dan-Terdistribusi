@@ -60,7 +60,7 @@ flowchart LR
 
 Arsitektur ini dirancang untuk menangani aliran data log secara efisien dengan memisahkan tanggung jawab antara penerimaan data, pemrosesan, dan penyajian informasi.
 
-1. Alur Kerja Komponen (Berdasarkan Diagram)
+### 3.3 Alur Kerja Komponen (Berdasarkan Diagram)
 Sistem dibagi menjadi tiga bagian utama yang bekerja secara terkoordinasi:
 
 a. Eksternal (Publisher):
@@ -78,7 +78,7 @@ b. Inti Aplikasi (Docker Container):
 c. Observability (Endpoints):
 Jalur khusus yang disediakan bagi pengguna untuk memeriksa hasil pemrosesan tanpa mengganggu alur masuknya data baru.
 
-###3.3 Poin Kunci Desain Sistem
+### 3.4 Poin Kunci Desain Sistem
 Implementasi ini mengedepankan empat prinsip utama sistem terdistribusi:
 
 a. Pemisahan Jalur Tulis dan Baca (Separation of Concerns):
@@ -93,9 +93,11 @@ Setiap event diidentifikasi secara unik melalui pasangan kunci (topic, event_id)
 d. Persistensi State dan Deduplikasi:
 Penggunaan SQLite memastikan bahwa data log dan status deduplikasi tersimpan dalam disk. Karena disimpan pada volume container, informasi mengenai event mana saja yang sudah diproses tetap terjaga meskipun layanan mengalami restart atau berhenti mendadak, sehingga state sistem tetap konsisten.
 
-###3.4 Analisis Aliran DataIngestion: 
+### 3.5 Analisis Aliran DataIngestion: 
 a. Publisher mengirimkan data $\rightarrow$ API memvalidasi $\rightarrow$ Queue menampung data sementara.
+
 b. Processing: Consumer mengambil data dari Queue $\rightarrow$ Mengecek keunikan pada SQLite Store $\rightarrow$ Menyimpan jika data baru.
+
 c. Consumption: Pengguna mengakses Endpoints $\rightarrow$ Sistem membaca data langsung dari SQLite Store tanpa mengganggu antrean.
 
 ## 4. Keputusan Desain Implementasi

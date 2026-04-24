@@ -111,7 +111,7 @@ c. Consumption: Pengguna mengakses Endpoints $\rightarrow$ Sistem membaca data l
 6. Ordering: tidak menjamin total ordering global; memakai event timestamp dan processing order lokal.
 7. Observability: endpoint stats dan log warning saat duplicate event terdeteksi.
 
-## 5. Jawaban Teori T1-T8
+## 5. Teori 
 
 ### T1 (Bab 1): Karakteristik sistem terdistribusi dan trade-off pada Pub-Sub log aggregator
 

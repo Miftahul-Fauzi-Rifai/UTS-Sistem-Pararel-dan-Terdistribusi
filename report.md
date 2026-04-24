@@ -247,15 +247,15 @@ Contoh hasil utama yang diharapkan:
 7. Restart container, lalu kirim lagi event dengan event_id yang sama.
 8. Tunjukkan duplicate tetap tidak diproses ulang (duplicate_dropped bertambah, event unik tidak bertambah untuk ID yang sama).
 
-## 9. Materi Bab 1-7 Dari Buku Referensi
+## 9. Ringkasan Konsep Bab 1–7 Berdasarkan Buku Referensi
 
-1. Bab 1: karakteristik sistem terdistribusi dan trade-off konsistensi-ketersediaan.
-2. Bab 2: pemilihan arsitektur publish-subscribe.
-3. Bab 3: delivery semantics at-least-once dan kebutuhan idempotency.
-4. Bab 4: naming topic dan event identity.
-5. Bab 5: waktu, ordering, dan batasan total ordering.
-6. Bab 6: failure modes serta fault tolerance berbasis dedup durable.
-7. Bab 7: eventual consistency melalui idempotency + deduplication.
+1. Bab 1: Konsep dasar dan karakteristik sistem terdistribusi, termasuk trade-off antara konsistensi dan ketersediaan.
+2. Bab 2: Arsitektur sistem terdistribusi, dengan penerapan pola publish-subscribe pada sistem yang dibangun.
+3. Bab 3: Mekanisme komunikasi dan pengiriman pesan, yang dalam implementasi mencakup delivery semantics seperti at-least-once serta kebutuhan idempotency.
+4. Bab 4: Konsep naming dan identitas entitas, diterapkan pada topic dan event_id.
+5. Bab 5: Sinkronisasi waktu dan ordering, termasuk batasan dalam penerapan total ordering.
+6. Bab 6: Penanganan kegagalan (failure modes) dan fault tolerance, dengan pendekatan deduplication berbasis penyimpanan persisten.
+7. Bab 7: Model konsistensi, khususnya eventual consistency, yang dicapai melalui idempotency dan deduplication.
 
 ## 10. Kesimpulan
 

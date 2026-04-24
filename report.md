@@ -14,7 +14,7 @@ Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik, se
 
 ## 2. Arsitektur Sistem
 
-
+```
 flowchart LR
 	P[Publisher] --> API[POST /publish\nFastAPI Ingress + Validasi]
 	API --> Q[asyncio.Queue\nInternal Buffer]
@@ -22,7 +22,7 @@ flowchart LR
 	C --> D[(SQLite Dedup Store\nUNIQUE(topic, event_id))]
 	D --> E[GET /events]
 	D --> S[GET /stats]
-
+```
 
 Penjelasan singkat:
 

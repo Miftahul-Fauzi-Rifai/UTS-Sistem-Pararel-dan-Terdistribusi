@@ -249,13 +249,15 @@ Contoh hasil utama yang diharapkan:
 
 ## 9. Ringkasan Konsep Bab 1–7 Berdasarkan Buku Referensi
 
-1. Bab 1: Konsep dasar dan karakteristik sistem terdistribusi, termasuk trade-off antara konsistensi dan ketersediaan.
+## 9. Ringkasan Konsep Bab 1–7 Berdasarkan Buku Referensi
+
+1. Bab 1: Konsep dasar dan karakteristik sistem terdistribusi, termasuk tantangan seperti heterogenitas, concurrency, dan partial failure.
 2. Bab 2: Arsitektur sistem terdistribusi, dengan penerapan pola publish-subscribe pada sistem yang dibangun.
-3. Bab 3: Mekanisme komunikasi dan pengiriman pesan, yang dalam implementasi mencakup delivery semantics seperti at-least-once serta kebutuhan idempotency.
-4. Bab 4: Konsep naming dan identitas entitas, diterapkan pada topic dan event_id.
-5. Bab 5: Sinkronisasi waktu dan ordering, termasuk batasan dalam penerapan total ordering.
-6. Bab 6: Penanganan kegagalan (failure modes) dan fault tolerance, dengan pendekatan deduplication berbasis penyimpanan persisten.
-7. Bab 7: Model konsistensi, khususnya eventual consistency, yang dicapai melalui idempotency dan deduplication.
+3. Bab 3: Mekanisme komunikasi antar proses, termasuk message passing dan keandalan pengiriman pesan.
+4. Bab 4: Konsep naming dan identitas entitas dalam sistem terdistribusi.
+5. Bab 5: Sinkronisasi waktu dan ordering event dalam sistem terdistribusi.
+6. Bab 6: Penanganan kegagalan (failure handling) dan fault tolerance.
+7. Bab 7: Model konsistensi, khususnya eventual consistency dalam sistem terdistribusi.
 
 ## 10. Kesimpulan
 

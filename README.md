@@ -185,8 +185,6 @@ docker compose --profile demo up --build
 
 ## Video Demo
 
-Tambahkan link video YouTube publik (5-8 menit):
-
 - Link video: https://youtu.be/n1vLJPup_IM
 
 ## Referensi

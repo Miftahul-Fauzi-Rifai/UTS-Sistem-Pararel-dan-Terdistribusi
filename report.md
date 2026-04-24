@@ -28,6 +28,7 @@ Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik, se
 ## 3. Arsitektur Sistem
 
 ### 3.1 Diagram Sederhana
+
 ```mermaid
 flowchart LR
     subgraph Client [Eksternal]

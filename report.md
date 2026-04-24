@@ -247,7 +247,7 @@ Contoh hasil utama yang diharapkan:
 7. Restart container, lalu kirim lagi event dengan event_id yang sama.
 8. Tunjukkan duplicate tetap tidak diproses ulang (duplicate_dropped bertambah, event unik tidak bertambah untuk ID yang sama).
 
-## 9. Keterkaitan dengan Materi Bab 1-7
+## 9. Materi Bab 1-7 Dari Buku Referensi
 
 1. Bab 1: karakteristik sistem terdistribusi dan trade-off konsistensi-ketersediaan.
 2. Bab 2: pemilihan arsitektur publish-subscribe.

@@ -187,7 +187,7 @@ docker compose --profile demo up --build
 
 Tambahkan link video YouTube publik (5-8 menit):
 
-- Link video: `ISI_LINK_YOUTUBE_DI_SINI`
+- Link video: `https://youtu.be/n1vLJPup_IM`
 
 ## Referensi
 

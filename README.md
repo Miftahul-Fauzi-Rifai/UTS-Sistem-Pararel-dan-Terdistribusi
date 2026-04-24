@@ -189,4 +189,4 @@ docker compose --profile demo up --build
 
 ## Referensi
 
-Pembahasan teori lengkap ada di `report.md`.
+Pembahasan teori lengkap ada di [`report.md`](report.md).

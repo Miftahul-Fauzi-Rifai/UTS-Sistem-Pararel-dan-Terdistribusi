@@ -12,16 +12,47 @@ Consumer melakukan deduplication berdasarkan pasangan kunci (topic, event_id). J
 
 Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik, serta GET /stats untuk observability minimum: received, unique_processed, duplicate_dropped, topics, queue_size, dan uptime. Seluruh komponen berjalan lokal dalam container Docker tanpa layanan eksternal. Persistensi dedup dijaga melalui file SQLite pada volume container sehingga tetap efektif setelah restart. Desain ini menargetkan model at-least-once delivery dengan state akhir yang konsisten melalui deduplication.
 
-## 2. Arsitektur Sistem
+## 2. Teknologi Yang Digunakan
+### Teknologi yang Digunakan:
 
-```
+| Aspek | Teknologi |
+|-------|-----------|
+| **Bahasa** | Python 3.11 |
+| **Framework API** | FastAPI, Uvicorn |
+| **Storage / Database** | SQLite (file-based database) |
+| **Queue / Internal Buffer** | asyncio.Queue (in-memory, asynchronous decoupling) |
+| **Container** | Docker + Docker Compose |
+| **Testing** | pytest |
+| **ORM/Validation** | Pydantic |
+
+## 3. Arsitektur Sistem
+
+```mermaid
 flowchart LR
-	P[Publisher] --> API[POST /publish\nFastAPI Ingress + Validasi]
-	API --> Q[asyncio.Queue\nInternal Buffer]
-	Q --> C[Idempotent Consumer]
-	C --> D[(SQLite Dedup Store\nUNIQUE(topic, event_id))]
-	D --> E[GET /events]
-	D --> S[GET /stats]
+    subgraph Client [Eksternal]
+        P([Publisher])
+    end
+
+    subgraph App [Docker Container: uts-aggregator]
+        direction TB
+        API[FastAPI Ingress\nPOST /publish]
+        Q[[asyncio.Queue\nInternal Buffer]]
+        C{{Idempotent Consumer\nBackground Task}}
+        D[(SQLite Dedup Store\nUNIQUE Constraint)]
+        
+        API -->|1. Put Event| Q
+        Q -->|2. Dequeue| C
+        C -->|3. Insert if New| D
+    end
+
+    subgraph Observability [Endpoints]
+        E([GET /events])
+        S([GET /stats])
+    end
+
+    P == "Kirim Batch" ==> API
+    D -. "Read Data" .-> E
+    D -. "Read Counters" .-> S
 ```
 
 Penjelasan singkat:
@@ -31,7 +62,7 @@ Penjelasan singkat:
 3. Consumer idempotent memastikan event dengan kunci (topic, event_id) tidak diproses dua kali.
 4. SQLite menyimpan dedup key dan event sehingga state tetap konsisten setelah restart.
 
-## 3. Keputusan Desain Implementasi
+## 4. Keputusan Desain Implementasi
 
 1. Framework API: FastAPI, karena validasi schema dan performa I/O baik untuk event ingestion.
 2. Pipeline internal: asyncio.Queue untuk pola publish-subscribe in-process yang sederhana.
@@ -41,7 +72,7 @@ Penjelasan singkat:
 6. Ordering: tidak menjamin total ordering global; memakai event timestamp dan processing order lokal.
 7. Observability: endpoint stats dan log warning saat duplicate event terdeteksi.
 
-## 4. Jawaban Teori T1-T8
+## 5. Jawaban Teori T1-T8
 
 ### T1 (Bab 1): Karakteristik sistem terdistribusi dan trade-off pada Pub-Sub log aggregator
 
@@ -91,7 +122,7 @@ Evaluasi sistem menggunakan metrik throughput, publish latency, duplicate rate, 
 
 Metrik tersebut terkait langsung dengan keputusan desain. Antrean asynchronous meningkatkan isolasi antara penerimaan dan pemrosesan sehingga throughput lebih stabil saat burst. Dedup store SQLite memperkuat correctness dan restart safety, walau menambah overhead I/O dibanding in-memory set. Keputusan untuk tidak memaksakan total ordering global menurunkan kompleksitas dan latency. Endpoint stats berfungsi sebagai observability minimum untuk memantau received, unique_processed, duplicate_dropped, dan distribusi topic. Dengan demikian, kualitas sistem tidak hanya dinilai dari kecepatan, tetapi dari keseimbangan antara kinerja, ketahanan kegagalan, dan konsistensi state akhir. Kerangka evaluasi ini mengintegrasikan trade-off lintas Bab 1 sampai Bab 7 secara operasional (Tanenbaum & Van Steen, 2007, Bab 1-7).
 
-## 5. Analisis Performa dan Metrik
+## 6. Analisis Performa dan Metrik
 
 Pengujian skala minimum menggunakan 5000 event dengan minimal 20 persen duplikasi. Target correctness yang diperiksa adalah:
 
@@ -101,7 +132,7 @@ Pengujian skala minimum menggunakan 5000 event dengan minimal 20 persen duplikas
 
 Selain correctness, pengukuran waktu eksekusi publish batch dipakai sebagai indikator responsivitas. Dalam test, batas waktu diset dalam rentang wajar untuk lingkungan lokal. Hasil pengujian menunjukkan pipeline tetap responsif, dedup tetap konsisten, dan statistik sistem sesuai dengan distribusi data uji.
 
-## 6. Validasi Deliverables
+## 7. Validasi Deliverables
 
 1. Kode aplikasi: folder src tersedia.
 2. Unit tests: folder tests tersedia dengan 9 test.
@@ -111,15 +142,6 @@ Selain correctness, pengukuran waktu eksekusi publish batch dipakai sebagai indi
 6. Dokumentasi run: tersedia di README.md.
 7. Laporan: file ini (report.md).
 8. Video demo YouTube publik: perlu ditambahkan sebelum submit final.
-
-## 7. Rencana Isi Video Demo (5-8 Menit)
-
-1. Build image dan jalankan container.
-2. Kirim event normal lalu lihat hasil GET /events dan GET /stats.
-3. Kirim duplikasi event_id yang sama dan tunjukkan duplicate_dropped naik.
-4. Restart container dengan volume data yang sama.
-5. Kirim ulang event lama dan tunjukkan dedup tetap menolak reprocessing.
-6. Ringkas arsitektur dan alasan desain (30-60 detik).
 
 ## 8. Contoh Alur Eksekusi Demo (Gaya Terminal)
 
@@ -200,6 +222,6 @@ Contoh hasil utama yang diharapkan:
 
 Sistem berhasil mengimplementasikan prinsip utama sistem terdistribusi untuk skenario log aggregation lokal. Kombinasi at-least-once delivery, idempotent consumer, dan deduplication menjaga konsistensi state akhir meskipun terdapat duplicate delivery dan restart service. Dengan arsitektur queue-based dan dedup store durable, sistem tetap responsif, reproducible, dan sesuai kriteria UTS.
 
-## 11. Daftar Pustaka (APA Edisi Ke-7)
+## 11. Daftar Pustaka 
 
 Tanenbaum, A. S., & Van Steen, M. (2007). Distributed systems: Principles and paradigms (2nd ed.). Pearson Prentice Hall.

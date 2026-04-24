@@ -27,6 +27,7 @@ Sistem menyediakan endpoint GET /events?topic=... untuk mengambil event unik, se
 
 ## 3. Arsitektur Sistem
 
+### 3.1 Diagram Sederhana
 ```mermaid
 flowchart LR
     subgraph Client [Eksternal]
@@ -55,12 +56,47 @@ flowchart LR
     D -. "Read Counters" .-> S
 ```
 
-Penjelasan singkat:
+### 3.2 Penjelasan Arsitektur Sistem: Pub-Sub Log Aggregator
 
-1. Jalur tulis (publish) dan jalur baca (events/stats) dipisahkan agar alur mudah dilacak.
-2. Ingestion dan processing dipisahkan lewat queue supaya API tetap responsif saat burst.
-3. Consumer idempotent memastikan event dengan kunci (topic, event_id) tidak diproses dua kali.
-4. SQLite menyimpan dedup key dan event sehingga state tetap konsisten setelah restart.
+Arsitektur ini dirancang untuk menangani aliran data log secara efisien dengan memisahkan tanggung jawab antara penerimaan data, pemrosesan, dan penyajian informasi.
+
+1. Alur Kerja Komponen (Berdasarkan Diagram)
+Sistem dibagi menjadi tiga bagian utama yang bekerja secara terkoordinasi:
+
+a. Eksternal (Publisher):
+Pihak luar atau layanan lain mengirimkan data log dalam bentuk batch melalui protokol HTTP ke titik masuk sistem.
+
+b. Inti Aplikasi (Docker Container):
+- FastAPI Ingress (API): Bertindak sebagai gerbang utama yang memvalidasi setiap event menggunakan model Pydantic untuk memastikan kelengkapan data sebelum diteruskan ke tahap berikutnya.
+
+- Internal Buffer (asyncio.Queue): Menyediakan ruang tunggu sementara bagi data yang telah divalidasi. Ini memisahkan fase ingestion dari fase penyimpanan.
+
+- Idempotent Consumer (Background Task): Sebuah proses yang berjalan terus-menerus di latar belakang untuk mengambil data dari antrean satu per satu dan mengeksekusi logika penyimpanan.
+
+- SQLite Dedup Store: Tempat penyimpanan permanen yang menggunakan aturan keunikan (UNIQUE constraint) untuk menjaga integritas data.
+
+c. Observability (Endpoints):
+Jalur khusus yang disediakan bagi pengguna untuk memeriksa hasil pemrosesan tanpa mengganggu alur masuknya data baru.
+
+###3.3 Poin Kunci Desain Sistem
+Implementasi ini mengedepankan empat prinsip utama sistem terdistribusi:
+
+a. Pemisahan Jalur Tulis dan Baca (Separation of Concerns):
+Jalur tulis (publish) melalui antrean asinkron dan jalur baca (events/stats) dipisahkan secara logika. Struktur ini mempermudah pelacakan alur data karena permintaan untuk membaca statistik tidak akan menghambat proses penerimaan log yang sedang berlangsung.
+
+b. Pemisahan Ingestion dan Processing (Buffering):
+Dengan adanya asyncio.Queue, API dapat langsung memberikan respons kepada publisher segera setelah data masuk ke antrean, tanpa menunggu data tersebut tertulis di database. Hal ini menjaga API tetap responsif dan mencegah timeout saat terjadi lonjakan data secara tiba-tiba (burst traffic).
+
+c. Consumer Bersifat Idempotent:
+Setiap event diidentifikasi secara unik melalui pasangan kunci (topic, event_id). Logika pada consumer menjamin bahwa jika event dengan identitas yang sama dikirimkan lebih dari sekali, sistem hanya akan memprosesnya satu kali dan mengabaikan sisanya sebagai duplikasi.
+
+d. Persistensi State dan Deduplikasi:
+Penggunaan SQLite memastikan bahwa data log dan status deduplikasi tersimpan dalam disk. Karena disimpan pada volume container, informasi mengenai event mana saja yang sudah diproses tetap terjaga meskipun layanan mengalami restart atau berhenti mendadak, sehingga state sistem tetap konsisten.
+
+###3.4 Analisis Aliran DataIngestion: 
+a. Publisher mengirimkan data $\rightarrow$ API memvalidasi $\rightarrow$ Queue menampung data sementara.
+b. Processing: Consumer mengambil data dari Queue $\rightarrow$ Mengecek keunikan pada SQLite Store $\rightarrow$ Menyimpan jika data baru.
+c. Consumption: Pengguna mengakses Endpoints $\rightarrow$ Sistem membaca data langsung dari SQLite Store tanpa mengganggu antrean.
 
 ## 4. Keputusan Desain Implementasi
 
